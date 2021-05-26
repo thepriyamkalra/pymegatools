@@ -157,7 +157,7 @@ class Megatools:
         if assume_async or iscoroutinefunction(progress):
             if progress is default_callback:
                 progress = default_async_callback
-            return self.async_download(url, progress, *progress_arguments, **options)
+            return self.async_download(url, progress, progress_arguments, **options)
         command = [self.executable, "dl", url, "--no-ask-password"]
         parse_options(command, **options)
         logger.info(f"Executing: {command}")

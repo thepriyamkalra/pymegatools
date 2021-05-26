@@ -6,7 +6,7 @@ with open(Path(__file__).parent / "README.md", "r") as readme:
 
 setup(
     name="pymegatools",
-    version="0.3.3",
+    version="1.0.1",
     author="justaprudev",
     description="Simple Python wrapper for the megatools cmdline utility.",
     long_description=long_description,
