@@ -3,7 +3,6 @@ import platform
 import re
 import stat
 from asyncio import iscoroutinefunction
-from asyncio.runners import run
 from functools import wraps
 from pathlib import Path
 from subprocess import PIPE, Popen
@@ -18,6 +17,9 @@ logger = logging.getLogger(Path(__file__).stem)
 
 class MegaError(Exception):
     """Exception for all errors with megatools"""
+    def __init__(self, returncode, *args: object) -> None:
+        self.returncode = returncode
+        super().__init__(*args)
 
 
 Stream = list[str]
@@ -77,12 +79,12 @@ async def default_async_callback(*args, **kwargs) -> None:
     default_callback(*args, **kwargs)
 
 
-def parse_and_raise(error: str) -> None:
+def parse_and_raise(returncode:int, error: str) -> None:
     pattern = re.compile(r"\w+: ")
     match = pattern.search(error)
     if match:
         error = error.replace(match.group(0), "", 1)
-    raise MegaError(error)
+    raise MegaError(returncode, f"[returnCode {returncode}] {error}")
 
 
 class Megatools:
@@ -118,7 +120,7 @@ class Megatools:
         progress_arguments: tuple = (),
         assume_async: bool = False,
         **options,
-    ) -> Union[str, Coroutine]:
+    ) -> Union[tuple[str, int], Coroutine]:
         """Download a file from mega.nz
 
         Args:
@@ -152,7 +154,7 @@ class Megatools:
             MegaError: Any error that occurs while execution
 
         Returns:
-            Union[str, Coroutine]: A coroutine if `progress` is async or `assume_async` is True, otherwise the stdout.
+            Union[tuple[str, int], Coroutine]: A coroutine if `progress` is async or `assume_async` is True, otherwise the stdout and returncode.
         """
         if assume_async or iscoroutinefunction(progress):
             if progress is default_callback:
@@ -163,8 +165,8 @@ class Megatools:
         logger.info(f"Executing: {command}")
         stdout, stderr, returncode = execute(command, progress, *progress_arguments)
         if stderr:
-            parse_and_raise(f"[returnCode {returncode}] {stderr}")
-        return stdout
+            parse_and_raise(returncode, stderr)
+        return stdout, returncode
 
     @wraps(download)
     async def async_download(
@@ -173,7 +175,7 @@ class Megatools:
         progress: Optional[Callable] = default_callback,
         progress_arguments: tuple = (),
         **options,
-    ) -> str:
+    ) -> tuple[str, int]:
         command = [self.executable, "dl", url, "--no-ask-password"]
         parse_options(command, **options)
         logger.info(f"Executing: {command}")
@@ -181,8 +183,8 @@ class Megatools:
             command, progress, *progress_arguments
         )
         if stderr:
-            parse_and_raise(f"[returnCode {returncode}] {stderr}")
-        return stdout
+            parse_and_raise(returncode, stderr)
+        return stdout, returncode
 
     @property
     def version(self) -> str:
@@ -191,7 +193,8 @@ class Megatools:
         Returns:
             str: Megatools version number as a string. (Ex 1.11.0)
         """
-        return self.download("", progress=None, version=True).split()[1]
+        stdout, _ = self.download("", progress=None, version=True)
+        return stdout.split()[1]
 
     def filename(self, url: str) -> str:
         """Get the name of a file from a valid mega.nz url
@@ -202,10 +205,11 @@ class Megatools:
         Returns:
             str: The name of the file
         """
-        return self.download(
+        stdout, _ = self.download(
             url,
             progress=lambda stream, process: stream[-1] and process.terminate(),
             print_names=True,
             limit_speed=1,
             path=str(self.tmp_directory),
-        ).split(":")[0]
+        )
+        return stdout.split(":")[0]
